@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+# Simple shim for tests to emulate "pymobiledevice3 developer dvt simulate-location ..."
+
+set -euo pipefail
+
+if [[ "$#" -lt 1 ]]; then
+  echo "pymobiledevice3 shim: no args" >&2
+  exit 2
+fi
+
+if [[ "${1-}" == "developer" && "${2-}" == "dvt" && "${3-}" == "simulate-location" ]]; then
+  subcmd="${4-}"
+  case "$subcmd" in
+    set)
+      # Accept any args after '--' and succeed
+      exit 0
+      ;;
+    reset)
+      echo "Usage: pymobiledevice3 developer dvt simulate-location [OPTIONS] COMMAND [ARGS]..."
+      echo "Try 'pymobiledevice3 developer dvt simulate-location -h' for help."
+      echo "" >&2
+      echo "Error: No such command 'reset'." >&2
+      exit 2
+      ;;
+    clear|unset|stop)
+      exit 0
+      ;;
+    *)
+      echo "pymobiledevice3 shim: unsupported simulate-location subcmd '$subcmd'" >&2
+      exit 2
+      ;;
+  esac
+fi
+
+echo "pymobiledevice3 shim: unsupported args: $*" >&2
+exit 2
+

@@ -10,7 +10,8 @@
     "set": "node src/ios-location.js",
     "reset": "node src/ios-location.js --reset",
     "tunnel": "sudo python3 -m pymobiledevice3 remote tunneld --host 127.0.0.1 --port 49151",
-    "set:seoul": "node src/ios-location.js --lat 37.56478 --lon 126.9912"
+    "set:seoul": "node src/ios-location.js --lat 37.56478 --lon 126.9912",
+    "test": "node tests/run.js"
   },
   "keywords": [
     "ios",
