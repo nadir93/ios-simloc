@@ -24,8 +24,7 @@ const { spawn } = require("child_process");
 const net = require("net");
 
 const DEFAULT_HOST = "127.0.0.1";
-theDEFAULT_PORT = 49151; // eslint-disable-line no-undef
-const DEFAULT_PORT = 49151; // fix accidental typo line above; keep this one!
+const DEFAULT_PORT = 49151;
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -152,37 +151,37 @@ function runSimulateLocation(lat, lon) {
   });
 }
 
-function runResetLocation() {
-  return new Promise((resolve, reject) => {
-    const cmd = "pymobiledevice3";
-    const args = ["developer", "dvt", "simulate-location", "reset"];
+async function runResetLocation() {
+  const cmd = "pymobiledevice3";
+  const makeArgs = (sub) => ["developer", "dvt", "simulate-location", sub];
 
-    console.log(`[reset] running: ${cmd} ${args.join(" ")}`);
-    const child = spawn(cmd, args, { stdio: "inherit" });
-
-    child.on("error", reject);
-    child.on("exit", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`simulate-location reset exited with code ${code}`));
+  const tryRun = (sub) =>
+    new Promise((resolve) => {
+      const args = makeArgs(sub);
+      console.log(`[reset] running: ${cmd} ${args.join(" ")}`);
+      const child = spawn(cmd, args, { stdio: "inherit" });
+      child.on("error", () => resolve(false));
+      child.on("exit", (code) => resolve(code === 0));
     });
-  });
+
+  // Some pymobiledevice3 versions use 'clear' instead of 'reset'. Try a few.
+  const candidates = ["reset", "clear", "unset", "stop"];
+  for (const sub of candidates) {
+    // eslint-disable-next-line no-await-in-loop
+    const ok = await tryRun(sub);
+    if (ok) return;
+    console.log(`[reset] '${sub}' failed, trying next if available...`);
+  }
+  throw new Error(
+    "simulate-location reset/clear failed. Check 'pymobiledevice3 developer dvt simulate-location -h' for supported subcommands."
+  );
 }
 
 (async () => {
   const opts = parseArgs();
+  const doReset = opts.reset === true;
 
-  if (opts.reset) {
-    try {
-      await runResetLocation();
-      console.log("[reset] done.");
-      process.exit(0);
-    } catch (err) {
-      console.error("[reset] failed:", err.message);
-      process.exit(2);
-    }
-  }
-
-  if (opts.lat == null || opts.lon == null) {
+  if (!doReset && (opts.lat == null || opts.lon == null)) {
     printUsageAndExit();
   }
 
@@ -209,11 +208,17 @@ function runResetLocation() {
       console.log("[tunneld] skipped (--no-tunnel). Make sure tunneld is already running.");
     }
 
-    await runSimulateLocation(opts.lat, opts.lon);
-    console.log("[simulate] done.");
+    if (doReset) {
+      await runResetLocation();
+      console.log("[reset] done.");
+    } else {
+      await runSimulateLocation(opts.lat, opts.lon);
+      console.log("[simulate] done.");
+    }
   } catch (err) {
-    console.error("[error]", err.message);
-    process.exitCode = 1;
+    if (doReset) console.error("[reset] failed:", err.message);
+    else console.error("[error]", err.message);
+    process.exitCode = doReset ? 2 : 1;
   } finally {
     if (tunnelProc && !tunnelProc.killed) {
       try {
