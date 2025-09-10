@@ -1,0 +1,13 @@
+# Node
+node_modules/
+npm-debug.log*
+package-lock.json
+
+# macOS
+.DS_Store
+
+# Python (로컬 환경 갖출 때 생길 수 있는 것들)
+__pycache__/
+*.pyc
+.venv/
+venv/

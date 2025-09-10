@@ -1,0 +1,27 @@
+{
+  "name": "ios-simloc",
+  "version": "0.1.0",
+  "description": "Automate iPhone simulated location via pymobiledevice3 (Node.js wrapper).",
+  "main": "src/ios-location.js",
+  "bin": {
+    "ios-simloc": "src/ios-location.js"
+  },
+  "scripts": {
+    "set": "node src/ios-location.js",
+    "reset": "node src/ios-location.js --reset",
+    "tunnel": "sudo python3 -m pymobiledevice3 remote tunneld --host 127.0.0.1 --port 49151",
+    "set:seoul": "node src/ios-location.js --lat 37.56478 --lon 126.9912"
+  },
+  "keywords": [
+    "ios",
+    "simulate-location",
+    "pymobiledevice3",
+    "developer",
+    "node"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=16"
+  }
+}
