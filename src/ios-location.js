@@ -22,9 +22,13 @@
 
 const { spawn } = require("child_process");
 const net = require("net");
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 49151;
+
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -34,7 +38,8 @@ function parseArgs() {
     lat: null,
     lon: null,
     reset: false,
-    noTunnel: false // 이미 tunneld를 따로 띄웠다면 true로
+    noTunnel: false, // 이미 tunneld를 따로 띄웠다면 true로
+    config: null
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -45,6 +50,7 @@ function parseArgs() {
     else if (a === "--lon") opts.lon = args[++i];
     else if (a === "--reset") opts.reset = true;
     else if (a === "--no-tunnel") opts.noTunnel = true;
+    else if (a === "--config") opts.config = args[++i] || null;
     else if (!a.startsWith("-")) {
       if (opts.lat === null) opts.lat = a;
       else if (opts.lon === null) opts.lon = a;
@@ -57,18 +63,59 @@ function parseArgs() {
 function printUsageAndExit() {
   console.log(`
 Usage:
-  ios-simloc [--lat <value>] [--lon <value>] [--host 127.0.0.1] [--port 49151]
+  ios-simloc [--lat <value>] [--lon <value>] [--host 127.0.0.1] [--port 49151] [--config <path>]
   ios-simloc <lat> <lon>
   ios-simloc --reset
   ios-simloc --no-tunnel --lat <value> --lon <value>
+  ios-simloc --config ios-simloc.config.json
 
 Examples:
   ios-simloc 37.56478 126.9912
   ios-simloc --lat 37.56478 --lon 126.9912
   ios-simloc --reset
   ios-simloc --no-tunnel --lat -27.32112 --lon 153.06814
+  ios-simloc --config ios-simloc.config.json
+
+Notes:
+  - If --lat/--lon are omitted, the tool attempts to read defaults from a config file.
+    Default search order: --config path > ./ios-simloc.config.json > ~/.ios-simloc.json
 `);
   process.exit(1);
+}
+
+function readJsonSafe(filePath) {
+  try {
+    const raw = fs.readFileSync(filePath, "utf8");
+    return JSON.parse(raw);
+  } catch (_) {
+    return null;
+  }
+}
+
+function resolveConfigPath(cliPath) {
+  if (cliPath) return path.resolve(cliPath);
+  const cwdPath = path.resolve(process.cwd(), "ios-simloc.config.json");
+  if (fs.existsSync(cwdPath)) return cwdPath;
+  const cwdGeneric = path.resolve(process.cwd(), "config.json");
+  if (fs.existsSync(cwdGeneric)) return cwdGeneric;
+  const homePath = path.join(os.homedir(), ".ios-simloc.json");
+  if (fs.existsSync(homePath)) return homePath;
+  return null;
+}
+
+function applyConfigDefaults(opts) {
+  const cfgPath = resolveConfigPath(opts.config);
+  if (!cfgPath) return null;
+  const cfg = readJsonSafe(cfgPath);
+  if (!cfg) return null;
+
+  if (opts.lat == null && cfg.lat != null) opts.lat = String(cfg.lat);
+  if (opts.lon == null && cfg.lon != null) opts.lon = String(cfg.lon);
+  if (opts.host === DEFAULT_HOST && cfg.host) opts.host = String(cfg.host);
+  if (opts.port === DEFAULT_PORT && cfg.port != null) opts.port = Number(cfg.port);
+
+  console.log(`[config] loaded: ${cfgPath}`);
+  return cfgPath;
 }
 
 function waitForPort(host, port, timeoutMs = 15000, intervalMs = 250) {
@@ -182,7 +229,10 @@ async function runResetLocation() {
   const doReset = opts.reset === true;
 
   if (!doReset && (opts.lat == null || opts.lon == null)) {
-    printUsageAndExit();
+    applyConfigDefaults(opts);
+    if (opts.lat == null || opts.lon == null) {
+      printUsageAndExit();
+    }
   }
 
   let tunnelProc = null;

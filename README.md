@@ -26,6 +26,21 @@ node src/ios-location.js --reset
 
 # 이미 tunneld가 떠있으면
 node src/ios-location.js --no-tunnel --lat <lat> --lon <lon>
+
+# 컨피그 파일에서 기본값 읽기
+# 우선순위: --config 경로 > ./ios-simloc.config.json > ./config.json > ~/.ios-simloc.json
+# 예) 현재 폴더의 config.json 사용
+node src/ios-location.js --config config.json
+```
+
+## 컨피그 예시 (config.json)
+```json
+{
+  "lat": 37.56478,
+  "lon": 126.9912,
+  "host": "127.0.0.1",
+  "port": 49151
+}
 ```
 
 ## 참고
