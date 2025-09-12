@@ -39,7 +39,8 @@ function parseArgs() {
     lon: null,
     reset: false,
     noTunnel: false, // 이미 tunneld를 따로 띄웠다면 true로
-    config: null
+    config: null,
+    help: false
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -51,6 +52,7 @@ function parseArgs() {
     else if (a === "--reset") opts.reset = true;
     else if (a === "--no-tunnel") opts.noTunnel = true;
     else if (a === "--config") opts.config = args[++i] || null;
+    else if (a === "--help" || a === "-h") opts.help = true;
     else if (!a.startsWith("-")) {
       if (opts.lat === null) opts.lat = a;
       else if (opts.lon === null) opts.lon = a;
@@ -63,11 +65,21 @@ function parseArgs() {
 function printUsageAndExit() {
   console.log(`
 Usage:
-  ios-simloc [--lat <value>] [--lon <value>] [--host 127.0.0.1] [--port 49151] [--config <path>]
+  ios-simloc [--lat <value>] [--lon <value>] [--host 127.0.0.1] [--port 49151] [--config <path>] [--help]
   ios-simloc <lat> <lon>
   ios-simloc --reset
   ios-simloc --no-tunnel --lat <value> --lon <value>
   ios-simloc --config ios-simloc.config.json
+
+Options:
+  --lat <value>     Latitude (위도)
+  --lon <value>     Longitude (경도)
+  --host <host>     Tunnel host (default: 127.0.0.1)
+  --port <port>     Tunnel port (default: 49151)
+  --config <path>   Config file path
+  --no-tunnel       Skip starting tunneld (assume already running)
+  --reset           Reset simulated location
+  --help, -h        Show this help message
 
 Examples:
   ios-simloc 37.56478 126.9912
@@ -78,7 +90,7 @@ Examples:
 
 Notes:
   - If --lat/--lon are omitted, the tool attempts to read defaults from a config file.
-    Default search order: --config path > ./ios-simloc.config.json > ~/.ios-simloc.json
+    Default search order: --config path > ./ios-simloc.config.json > ./config.json > ~/.ios-simloc.json
 `);
   process.exit(1);
 }
@@ -188,12 +200,32 @@ function runSimulateLocation(lat, lon) {
     ];
 
     console.log(`[simulate] running: ${cmd} ${args.join(" ")}`);
-    const child = spawn(cmd, args, { stdio: "inherit" });
+    const child = spawn(cmd, args, { 
+      stdio: ["ignore", "pipe", "pipe"] // stdout, stderr를 캡처
+    });
 
-    child.on("error", reject);
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    child.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    child.on("error", (err) => {
+      reject(new Error(`Failed to start pymobiledevice3: ${err.message}`));
+    });
+
     child.on("exit", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`simulate-location exited with code ${code}`));
+      if (code === 0) {
+        resolve();
+      } else {
+        const errorMsg = stderr.trim() || `simulate-location exited with code ${code}`;
+        reject(new Error(errorMsg));
+      }
     });
   });
 }
@@ -206,9 +238,35 @@ async function runResetLocation() {
     new Promise((resolve) => {
       const args = makeArgs(sub);
       console.log(`[reset] running: ${cmd} ${args.join(" ")}`);
-      const child = spawn(cmd, args, { stdio: "inherit" });
-      child.on("error", () => resolve(false));
-      child.on("exit", (code) => resolve(code === 0));
+      const child = spawn(cmd, args, { 
+        stdio: ["ignore", "pipe", "pipe"] // stdout, stderr를 캡처
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      child.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      child.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      child.on("error", (err) => {
+        console.log(`[reset] '${sub}' error: ${err.message}`);
+        resolve(false);
+      });
+
+      child.on("exit", (code) => {
+        if (code === 0) {
+          resolve(true);
+        } else {
+          const errorMsg = stderr.trim();
+          console.log(`[reset] '${sub}' failed: ${errorMsg || `exit code ${code}`}`);
+          resolve(false);
+        }
+      });
     });
 
   // Some pymobiledevice3 versions use 'clear' instead of 'reset'. Try a few.
@@ -228,6 +286,17 @@ async function runResetLocation() {
   const opts = parseArgs();
   const doReset = opts.reset === true;
 
+  // --help 플래그가 있으면 사용법 출력 후 종료
+  if (opts.help) {
+    printUsageAndExit();
+  }
+
+  // 인수가 전혀 없으면 사용법 출력
+  if (process.argv.length === 2) {
+    printUsageAndExit();
+  }
+
+  // reset이 아니고 lat/lon이 없으면 설정 파일에서 읽기 시도
   if (!doReset && (opts.lat == null || opts.lon == null)) {
     applyConfigDefaults(opts);
     if (opts.lat == null || opts.lon == null) {
@@ -242,10 +311,12 @@ async function runResetLocation() {
       tunnelProc = spawnTunneld(opts.host, opts.port);
 
       const clean = () => {
-        if (tunnelProc && !tunnelProc.killed) {
+        if (tunnelProc && !tunnelProc.killed && tunnelProc.pid) {
           try {
             process.kill(tunnelProc.pid, "SIGTERM");
-          } catch (_) {}
+          } catch (_) {
+            // 프로세스가 이미 종료되었거나 권한이 없는 경우 무시
+          }
         }
       };
       process.on("SIGINT", () => { clean(); process.exit(130); });
@@ -270,10 +341,12 @@ async function runResetLocation() {
     else console.error("[error]", err.message);
     process.exitCode = doReset ? 2 : 1;
   } finally {
-    if (tunnelProc && !tunnelProc.killed) {
+    if (tunnelProc && !tunnelProc.killed && tunnelProc.pid) {
       try {
         process.kill(tunnelProc.pid, "SIGTERM");
-      } catch (_) {}
+      } catch (_) {
+        // 프로세스가 이미 종료되었거나 권한이 없는 경우 무시
+      }
     }
   }
 })();
